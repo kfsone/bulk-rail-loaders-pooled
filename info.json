@@ -1,0 +1,12 @@
+{
+    "name": "modern-bulk-rail-loader-pooled",
+    "version": "0.1.0",
+    "title": "Modern Bulk Rail Loaders: Pooled",
+    "author": "Sølve Monteiro",
+    "description": "Bulk train loading/unloading silos that share a single pooled inventory per station. Contents can never get unbalanced between wagons, so automated deliveries (e.g. Cybersyn) always complete when the station total suffices. Pooled-architecture rework inspired by Modern Bulk Rail Loader by Vyl.",
+    "factorio_version": "2.0",
+    "dependencies": [
+        "base >= 2.0.38",
+        "? cybersyn"
+    ]
+}
