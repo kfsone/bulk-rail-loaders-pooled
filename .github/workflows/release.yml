@@ -1,0 +1,50 @@
+name: Release mod
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read mod name and version
+        id: mod
+        run: |
+          echo "name=$(jq -r .name info.json)" >> "$GITHUB_OUTPUT"
+          echo "version=$(jq -r .version info.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Check for existing release
+        id: check
+        run: |
+          if gh release view "v${{ steps.mod.outputs.version }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pack mod zip
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          # Factorio expects the zip to contain a single <name>_<version>/ folder
+          DIR="${{ steps.mod.outputs.name }}_${{ steps.mod.outputs.version }}"
+          mkdir -p "/tmp/pack/$DIR"
+          rsync -a --exclude '.git*' --exclude '.github' ./ "/tmp/pack/$DIR/"
+          (cd /tmp/pack && zip -r "$GITHUB_WORKSPACE/$DIR.zip" "$DIR")
+
+      - name: Create release
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          gh release create "v${{ steps.mod.outputs.version }}" \
+            "${{ steps.mod.outputs.name }}_${{ steps.mod.outputs.version }}.zip" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "${{ steps.mod.outputs.name }} ${{ steps.mod.outputs.version }}" \
+            --generate-notes
