@@ -11,7 +11,7 @@ only one inventory per station:
 * Factory inserters/loaders can feed or drain **any** silo; it all lands in the
   same pool.
 
-Requires **Factorio ≥ 2.0.38** (the version that introduced proxy containers).
+Requires **Factorio ≥ 2.1.0**. (This fork only bumps compatibility from the upstream 2.0 release; 2.0 users should use the upstream mod.)
 
 ## Usage
 
