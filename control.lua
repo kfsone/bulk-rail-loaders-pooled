@@ -681,3 +681,52 @@ script.on_event(defines.events.on_gui_switch_state_changed, function(event)
         player.print("Note: the shared pool still contains items; they now follow the new mode.")
     end
 end)
+
+-- ---------------------------------------------------------------------------
+-- Remote interface
+-- ---------------------------------------------------------------------------
+-- remote.call("mbrlp", "set_station_mode", surface_name, x, y, mode)
+--   Sets the station whose train stop is within 0.5 tiles of (x, y) on the
+--   named surface (a stop-less silo group is matched by its pool position) to
+--   "load" or "unload" and redraws its silos, exactly like the stop panel's
+--   Load/Unload switch. Returns true on success, false on bad arguments or
+--   when no station is found. Useful to re-set modes after a rebuild.
+--
+-- remote.call("mbrlp", "get_station_mode", surface_name, x, y)
+--   Same lookup; returns "load" or "unload", or nil when no station is found.
+local function find_group(surface_name, x, y)
+    if type(surface_name) ~= "string" or type(x) ~= "number" or type(y) ~= "number" then return nil end
+    local surface = game.get_surface(surface_name)
+    if not surface then return nil end
+    local stop = surface.find_entities_filtered{
+        type = "train-stop",
+        area = {{x - 0.5, y - 0.5}, {x + 0.5, y + 0.5}},
+        limit = 1
+    }[1]
+    local group_id = stop and storage.stop_to_group[stop.unit_number]
+    local group = group_id and storage.groups[group_id]
+    if group and group.pool.valid then return group end
+    for _, g in pairs(storage.groups) do
+        if g.pool.valid and g.pool.surface == surface
+            and math.abs(g.pool.position.x - x) <= 0.5
+            and math.abs(g.pool.position.y - y) <= 0.5
+            and next(g.silos) then
+            return g
+        end
+    end
+end
+
+remote.add_interface("mbrlp", {
+    set_station_mode = function(surface_name, x, y, mode)
+        if mode ~= "load" and mode ~= "unload" then return false end
+        local group = find_group(surface_name, x, y)
+        if not group then return false end
+        group.mode = mode
+        redraw_group(group)
+        return true
+    end,
+    get_station_mode = function(surface_name, x, y)
+        local group = find_group(surface_name, x, y)
+        return group and group.mode or nil
+    end
+})
