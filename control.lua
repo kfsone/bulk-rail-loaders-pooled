@@ -24,9 +24,6 @@ local function init_storage()
     storage.ui_count = storage.ui_count or 5
 end
 
-script.on_init(init_storage)
-script.on_configuration_changed(init_storage)
-
 -- ---------------------------------------------------------------------------
 -- Groups and pools
 -- ---------------------------------------------------------------------------
@@ -49,8 +46,11 @@ local function update_pool_bar(group)
     inv.set_bar(usable + 1) -- the bar is the first *blocked* slot
 end
 
-local function create_group(surface, position, force, stop)
-    local pool = surface.create_entity{name = POOL_NAME, position = position, force = force}
+-- existing_pool: adopt a pool that already exists in the save (state rebuild)
+-- instead of creating a new one.
+local function create_group(surface, position, force, stop, existing_pool)
+    local pool = existing_pool
+        or surface.create_entity{name = POOL_NAME, position = position, force = force}
     pool.destructible = false
     local group = {
         id = pool.unit_number,
@@ -136,9 +136,15 @@ local function attach_silo(silo, group)
     redraw_silo(group, silo)
 
     if remote.interfaces["cybersyn"] then
-        storage.silo_inserters[silo.unit_number] = silo.surface.create_entity{
+        local inserter_pos = {x = silo.position.x, y = silo.position.y - 2}
+        -- reuse a helper inserter that already exists (state rebuild) so we
+        -- never stack duplicates
+        local existing = silo.surface.find_entities_filtered{
+            name = INSERTER_NAME, position = inserter_pos, radius = 1.5, limit = 1
+        }[1]
+        storage.silo_inserters[silo.unit_number] = existing or silo.surface.create_entity{
             name = INSERTER_NAME,
-            position = {x = silo.position.x, y = silo.position.y - 2},
+            position = inserter_pos,
             force = silo.force
         }
     end
@@ -445,6 +451,95 @@ local function auto_attach(silo)
     end
     attach_silo(silo, group)
 end
+
+-- ---------------------------------------------------------------------------
+-- State rebuild
+-- ---------------------------------------------------------------------------
+-- Script state lives in `storage`, which is keyed by mod name. When this mod
+-- is added to a save that was made with another copy of it (e.g. the original
+-- mod this one replaces) `storage` starts empty although the silos and pools
+-- are still on the map. Re-register them exactly as live placement would.
+-- Recovered from entities: silos, pool of each silo (proxy target), the train
+-- stop (pool sits on the stop), orientation, gap style (inferred from the silo
+-- layout), Cybersyn helper inserters (adopted). NOT recoverable: station mode
+-- (defaults to "load"), the GUI's remembered wagon count, sprites (redrawn).
+
+local function infer_gap_style(group, stop)
+    local layout = RAIL_LAYOUT[stop.direction]
+    if not layout then return nil end
+    local min_slot
+    for _, silo in pairs(group.silos) do
+        if silo.valid then
+            local dx = silo.position.x - stop.position.x - layout.lateral.x
+            local dy = silo.position.y - stop.position.y - layout.lateral.y
+            local offset = dx * layout.axis.x + dy * layout.axis.y
+            local slot = (offset - 3) / WAGON_SPACING
+            if math.abs(slot - math.floor(slot + 0.5)) > 0.01 then return nil end
+            slot = math.floor(slot + 0.5)
+            if not min_slot or slot < min_slot then min_slot = slot end
+        end
+    end
+    return ({[0] = "compact", [1] = "normal", [2] = "extra"})[min_slot]
+end
+
+local function rebuild_state()
+    init_storage()
+    local rebuilt = {}
+    local bars = {} -- pool unit_number -> inventory bar as found in the save
+    for _, surface in pairs(game.surfaces) do
+        for _, silo in pairs(surface.find_entities_filtered{name = SILO_NAME}) do
+            if not storage.silo_to_group[silo.unit_number] then
+                local pool = silo.proxy_target_entity
+                if pool and pool.valid and pool.name == POOL_NAME then
+                    local group = storage.groups[pool.unit_number]
+                    if not group then
+                        local stop = surface.find_entities_filtered{
+                            type = "train-stop",
+                            area = {
+                                {pool.position.x - 0.5, pool.position.y - 0.5},
+                                {pool.position.x + 0.5, pool.position.y + 0.5}
+                            },
+                            limit = 1
+                        }[1]
+                        if stop and storage.stop_to_group[stop.unit_number] then
+                            stop = nil -- that stop already owns another group
+                        end
+                        bars[pool.unit_number] = pool_inventory({pool = pool}).get_bar()
+                        group = create_group(surface, pool.position, pool.force, stop, pool)
+                        rebuilt[#rebuilt + 1] = group
+                    end
+                    attach_silo(silo, group)
+                else
+                    auto_attach(silo) -- orphaned silo: behaves like a fresh placement
+                end
+            end
+        end
+    end
+    for _, group in pairs(rebuilt) do
+        -- attach_silo recomputed the bar from the current silo count; put back
+        -- what the save had so capacity/behaviour is unchanged by the rename
+        -- (it is recomputed on the next silo change as usual)
+        if group.pool.valid and bars[group.id] then
+            pool_inventory(group).set_bar(bars[group.id])
+        end
+        if group.stop and group.stop.valid and not storage.gap_styles[group.stop.unit_number] then
+            storage.gap_styles[group.stop.unit_number] = infer_gap_style(group, group.stop)
+        end
+        log(string.format("[mbrlp] group %d: stop=%s gap=%s vertical=%s silos=%d mode=%s",
+            group.id, group.stop and group.stop.valid and "yes" or "none",
+            group.stop and group.stop.valid and tostring(storage.gap_styles[group.stop.unit_number]) or "n/a",
+            tostring(group.vertical), table_size(group.silos), group.mode))
+    end
+    if #rebuilt > 0 then
+        log(string.format("[mbrlp] state rebuilt: %d station group(s); mode defaulted to load", #rebuilt))
+        game.print(string.format(
+            "Bulk loaders: re-registered %d station(s) from the map. Station mode could not be recovered and is set to Load; open each unloading stop and switch it back to Unload.",
+            #rebuilt))
+    end
+end
+
+script.on_init(rebuild_state)
+script.on_configuration_changed(rebuild_state)
 
 script.on_event({
     defines.events.on_built_entity,

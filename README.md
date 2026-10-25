@@ -1,4 +1,15 @@
-# Modern Bulk Rail Loaders: Pooled
+# Modern Bulk Rail Loaders: Pooled (Unofficial 2.1 Fix)
+
+**Unofficial renamed release** (`modern-bulk-rail-loader-pooled-Unofficial-2-1Fix`) so the 2.1 port can live
+on the mod portal next to the original. Original mod by Sølve Monteiro
+([solvemon/bulk-rail-loaders-pooled](https://github.com/solvemon/bulk-rail-loaders-pooled)); 2.1 fix by
+kfsone ([fork](https://github.com/kfsone/bulk-rail-loaders-pooled), branch `unofficial-2-1fix`).
+
+**This replaces the original mod: disable/remove `modern-bulk-rail-loader-pooled` before enabling it** (the two
+define the same prototypes and are marked incompatible). Silos, pools and their contents in an existing save are kept;
+the mod's script state is rebuilt from the placed entities on first load. Not recoverable from the map: each station's
+**Load/Unload mode** (every station comes back as *Load*; reopen unloading stops and switch them back to *Unload*) and the
+wagon-count remembered by the stop panel. The gap style (locomotives in front) is inferred from the silo layout.
 
 A pooled-inventory rework of the bulk rail loader concept. Every station has
 **one** hidden cargo inventory (the *pool*); each visible silo is a Factorio 2.0
@@ -54,5 +65,5 @@ Symlink into your mods folder under the mod's name (the folder name must match
 `info.json`):
 
 ```
-ln -s /path/to/this/repo ~/.factorio/mods/modern-bulk-rail-loader-pooled
+ln -s /path/to/this/repo ~/.factorio/mods/modern-bulk-rail-loader-pooled-Unofficial-2-1Fix_0.1.2
 ```
