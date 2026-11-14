@@ -16,5 +16,12 @@ data:extend({
         minimum_value = 1,
         maximum_value = 32,
         order = "b"
+    },
+    {
+        type = "bool-setting",
+        name = "mbrlp-cs2-exact-loading",
+        setting_type = "runtime-global",
+        default_value = true,
+        order = "c"
     }
 })

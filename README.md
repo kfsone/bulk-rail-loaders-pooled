@@ -28,6 +28,21 @@ Wire **exactly one** silo (any of them) to your circuit network or Cybersyn
 combinator — every silo reports the full shared pool, so wiring two silos
 doubles the reading.
 
+### Cybersyn 2: exact loading
+
+With [Cybersyn 2](https://mods.factorio.com/mod/cybersyn2) installed, a train
+that arrives at a loading station on a Cybersyn 2 delivery is loaded with
+**exactly** that delivery's items and amounts; everything else stays in the
+pool, so one station can provide several items. Trains without a Cybersyn 2
+delivery are loaded with the whole pool as before. The map setting
+*Cybersyn 2: load exact delivery amounts* turns this off.
+
+**Unload stations need an inactivity timeout.** Silos unload a whole train in
+one tick, so the train leaves before the circuit network shows the new stock,
+and Cybersyn 2 then orders the same delivery again. On the station combinator
+of every unload station, set *Inactivity mode* to **After delivery** with a
+timeout of at least 1 second.
+
 ## Design notes
 
 * The pool is a hidden, indestructible container placed at the train stop. Its

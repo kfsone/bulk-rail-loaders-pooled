@@ -135,11 +135,12 @@ local function attach_silo(silo, group)
     update_pool_bar(group)
     redraw_silo(group, silo)
 
-    if remote.interfaces["cybersyn"] then
+    if remote.interfaces["cybersyn"] or remote.interfaces["cybersyn2"] then
         storage.silo_inserters[silo.unit_number] = silo.surface.create_entity{
             name = INSERTER_NAME,
             position = {x = silo.position.x, y = silo.position.y - 2},
-            force = silo.force
+            force = silo.force,
+            raise_built = true -- Cybersyn 2 registers equipment from build events
         }
     end
 end
@@ -147,7 +148,7 @@ end
 local function forget_silo(unit_number)
     destroy_silo_sprites(unit_number)
     local inserter = storage.silo_inserters[unit_number]
-    if inserter and inserter.valid then inserter.destroy() end
+    if inserter and inserter.valid then inserter.destroy{raise_destroy = true} end
     storage.silo_inserters[unit_number] = nil
     storage.silo_to_group[unit_number] = nil
 end
@@ -215,6 +216,78 @@ local function clear_silo_ghosts(stop)
 end
 
 -- ---------------------------------------------------------------------------
+-- Cybersyn 2 exact loading
+-- ---------------------------------------------------------------------------
+
+local function cs2_query(args)
+    local ok, result = pcall(remote.call, "cybersyn2", "query", args)
+    if ok and type(result) == "table" then return result.data end
+end
+
+-- Returns false when the train has no Cybersyn 2 delivery (load the whole
+-- pool), otherwise the list of {name, quality, count} to load, which is empty
+-- when this stop is not the delivery's provider.
+local function resolve_manifest(train)
+    if not remote.interfaces["cybersyn2"] then return false end
+    if not settings.global["mbrlp-cs2-exact-loading"].value then return false end
+
+    local vehicles = cs2_query{type = "vehicles", luatrain_ids = {train.id}}
+    local vehicle = vehicles and vehicles[1]
+    if not (vehicle and vehicle.delivery_id) then return false end
+
+    local deliveries = cs2_query{type = "deliveries", ids = {vehicle.delivery_id}}
+    local delivery = deliveries and deliveries[1]
+    if not (delivery and delivery.manifest) then return false end
+
+    local stop = train.station
+    local node = stop and cs2_query{type = "stop", unit_number = stop.unit_number}
+    if not (node and node.id == delivery.from_id) then return {} end
+
+    local manifest = {}
+    for key, count in pairs(delivery.manifest) do
+        -- Keys are "name" or "name|quality"; fluids share the table.
+        local name, quality = string.match(key, "^([^|]+)|?(.*)$")
+        if prototypes.item[name] and count > 0 then
+            manifest[#manifest + 1] = {
+                name = name,
+                quality = quality ~= "" and quality or "normal",
+                count = count
+            }
+        end
+    end
+    return manifest
+end
+
+-- The manifest is resolved once per visit and cached on the group.
+local function manifest_for(group, train)
+    local target = group.target
+    if not target or target.train_id ~= train.id then
+        target = {train_id = train.id, manifest = resolve_manifest(train)}
+        group.target = target
+    end
+    return target.manifest
+end
+
+local function load_exact(train, pool_inv, wagon_invs, manifest)
+    for _, want in pairs(manifest) do
+        local item = {name = want.name, quality = want.quality}
+        local remaining = math.min(
+            want.count - train.get_item_count(item),
+            pool_inv.get_item_count(item))
+        for i, wagon_inv in pairs(wagon_invs) do
+            if remaining <= 0 then break end
+            item.count = math.ceil(remaining / (#wagon_invs - i + 1))
+            local inserted = wagon_inv.insert(item)
+            if inserted > 0 then
+                item.count = inserted
+                pool_inv.remove(item)
+                remaining = remaining - inserted
+            end
+        end
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Wagon transfer
 -- ---------------------------------------------------------------------------
 
@@ -238,17 +311,22 @@ local function process_group(group)
     if not group.pool.valid then return end
 
     local wagon_invs = {}
+    local train
     for unit_number, silo in pairs(group.silos) do
         if silo.valid then
             local wagon = stopped_wagon_at(silo)
             if wagon then
                 wagon_invs[#wagon_invs + 1] = wagon.get_inventory(defines.inventory.cargo_wagon)
+                train = train or wagon.train
             end
         else
             detach_silo(unit_number)
         end
     end
-    if #wagon_invs == 0 then return end
+    if #wagon_invs == 0 then
+        group.target = nil
+        return
+    end
 
     local pool_inv = pool_inventory(group)
     if group.mode == "unload" then
@@ -261,6 +339,11 @@ local function process_group(group)
             end
         end
     else
+        local manifest = manifest_for(group, train)
+        if manifest then
+            load_exact(train, pool_inv, wagon_invs, manifest)
+            return
+        end
         -- Split each item type evenly across the wagons present, as if every
         -- hopper held its share. A wagon that can't take its share (full,
         -- filtered) leaves the rest to be re-split among the later wagons.
@@ -296,7 +379,10 @@ script.on_event(defines.events.on_train_changed_state, function(event)
     if not stop then return end
     local group_id = storage.stop_to_group[stop.unit_number]
     local group = group_id and storage.groups[group_id]
-    if group then process_group(group) end
+    if group then
+        group.target = nil
+        process_group(group)
+    end
 end)
 
 -- ---------------------------------------------------------------------------
