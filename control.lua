@@ -25,7 +25,6 @@ local function init_storage()
 end
 
 script.on_init(init_storage)
-script.on_configuration_changed(init_storage)
 
 -- ---------------------------------------------------------------------------
 -- Groups and pools
@@ -95,7 +94,7 @@ local function redraw_silo(group, silo)
             sprite = group.vertical and "mbrlp-unloader-vertical" or "mbrlp-unloader-horizontal",
             target = silo,
             surface = silo.surface,
-            render_layer = "floor-mechanics" -- under the wagon, above the rails
+            render_layer = "ground-patch-higher2" -- covers the ties, under the rail metal
         }
     else
         sprites[1] = rendering.draw_sprite{
@@ -113,6 +112,14 @@ local function redraw_group(group)
         if silo.valid then redraw_silo(group, silo) end
     end
 end
+
+script.on_configuration_changed(function()
+    init_storage()
+    -- pick up changed sprites and render layers on existing stations
+    for _, group in pairs(storage.groups) do
+        redraw_group(group)
+    end
+end)
 
 -- ---------------------------------------------------------------------------
 -- Attaching / removing silos
