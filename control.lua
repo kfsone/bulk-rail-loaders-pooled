@@ -25,7 +25,12 @@ local function init_storage()
 end
 
 script.on_init(init_storage)
-script.on_configuration_changed(init_storage)
+script.on_configuration_changed(function()
+    init_storage()
+    for _, inserter in pairs(storage.silo_inserters) do
+        if inserter.valid then inserter.disabled_by_script = true end
+    end
+end)
 
 -- ---------------------------------------------------------------------------
 -- Groups and pools
@@ -136,12 +141,16 @@ local function attach_silo(silo, group)
     redraw_silo(group, silo)
 
     if remote.interfaces["cybersyn"] or remote.interfaces["cybersyn2"] then
-        storage.silo_inserters[silo.unit_number] = silo.surface.create_entity{
+        local inserter = silo.surface.create_entity{
             name = INSERTER_NAME,
             position = {x = silo.position.x, y = silo.position.y - 2},
             force = silo.force,
             raise_built = true -- Cybersyn 2 registers equipment from build events
         }
+        if inserter then
+            inserter.disabled_by_script = true -- detection only; must never move items
+            storage.silo_inserters[silo.unit_number] = inserter
+        end
     end
 end
 

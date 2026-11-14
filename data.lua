@@ -119,6 +119,11 @@ invisible_inserter.hand_closed_shadow = empty_picture
 invisible_inserter.hand_open_shadow = empty_picture
 invisible_inserter.platform_picture = {sheet = empty_picture}
 invisible_inserter.draw_held_item = false
+invisible_inserter.draw_inserter_arrow = false
+invisible_inserter.flags = {
+    "not-on-map", "hide-alt-info",
+    "not-blueprintable", "not-deconstructable", "no-copy-paste", "not-upgradable"
+}
 
 data:extend{silo, pool, silo_item, invisible_inserter}
 data:extend(sprites)
